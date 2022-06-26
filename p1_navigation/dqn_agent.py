@@ -20,7 +20,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class Agent():
     """Interacts with and learns from the environment."""
 
-    def __init__(self, state_size, action_size, seed):
+    def __init__(self, state_size, action_size, seed, double_dqn=False):
         """Initialize an Agent object.
         
         Params
@@ -32,7 +32,7 @@ class Agent():
         self.state_size = state_size
         self.action_size = action_size
         self.seed = random.seed(seed)
-
+        self.double = double_dqn
         # Q-Network
         self.qnetwork_local = QNetwork(state_size, action_size, seed).to(device)
         self.qnetwork_target = QNetwork(state_size, action_size, seed).to(device)
@@ -85,8 +85,26 @@ class Agent():
         """
         states, actions, rewards, next_states, dones = experiences
 
-        ## TODO: compute and minimize the loss
-        "*** YOUR CODE HERE ***"
+        if self.double:
+            ## Using one network to select the best action and another to get the Q-value corresponding to that action
+            best_actions = self.qnetwork_local(next_states).max(dim=1, keepdim=True)[1]
+            Q_targets_next = self.qnetwork_target(next_states).gather(1, best_actions)
+        else:
+            # Get max predicted Q values (for next states) from target model
+            Q_targets_next = self.qnetwork_target(next_states).detach().max(1)[0].unsqueeze(1)
+
+        # Compute Q targets for current states 
+        Q_targets = rewards + (gamma * Q_targets_next * (1 - dones))
+
+        # Get expected Q values from local model
+        Q_expected = self.qnetwork_local(states).gather(1, actions)
+
+        # Compute loss
+        loss = F.mse_loss(Q_expected, Q_targets)
+        # Minimize the loss
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
 
         # ------------------- update target network ------------------- #
         self.soft_update(self.qnetwork_local, self.qnetwork_target, TAU)                     
